@@ -10,19 +10,31 @@ import time
 import schedule
 
 # API TomTom
-API_KEY = '2TMm2dGQyjGHlyNTexX0S0GJfl3iRlBm'
+API_KEY = 'G1Kx7s7TNR8FRXYcF9UHD06gFOXVuzCb'
 
 # Puntos estratégicos de cali
 ZONAS = {
     #"Centro": (4.653, -74.083),
-    "Zona T": (4.667, -74.057),
-    "Usaquén": (4.702, -74.030),
-    "Kennedy": (4.631, -74.157),
-    "Suba": (4.748, -74.093),
-    "Chapinero": (4.645, -74.065),
-    "Fontibón": (4.678, -74.140),
-    "VALLE DE LILI": (3.374263, -76.524778),
-    "POPAYAN BARRIO": (2.437848, -76.602808)
+    # "Zona T": (4.667, -74.057),
+    # "Usaquén": (4.702, -74.030),
+    # "Kennedy": (4.631, -74.157),
+    # "Suba": (4.748, -74.093),
+    # "Chapinero": (4.645, -74.065),
+    # "Fontibón": (4.678, -74.140),
+    # "VALLE DE LILI": (3.374263, -76.524778),
+    # "POPAYAN BARRIO": (2.437848, -76.602808)
+    "Start": (3.260246, -76.558757),
+    "Point 1": (3.266395, -76.557887),
+    "Point 2": (3.276911, -76.556449),
+    "Point 3": (3.280842, -76.555205),
+    "Point 4": (3.292055, -76.544980),
+    "Point 5": (3.306039, -76.540577),
+    "Point 6": (3.310819, -76.538956),
+    "Point 7": (3.325761, -76.533661),
+    "Point 8": (3.332542, -76.532629),
+    "Point 9": (3.336233, -76.531903),
+    "Point 10": (3.338965, -76.531319),
+    "End": (3.342193, -76.530978)
 }
 
 #  Función para consultar tráfico
