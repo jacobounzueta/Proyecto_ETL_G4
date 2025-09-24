@@ -7,7 +7,7 @@ import pandas as pd
 import folium
 from datetime import datetime
 import time
-
+import schedule
 
 # API TomTom
 API_KEY = '2TMm2dGQyjGHlyNTexX0S0GJfl3iRlBm'
@@ -54,17 +54,24 @@ def obtener_trafico(lat, lon, api_key):
 
 #  Generar DataFrame
 def generar_dataset(zonas, api_key):
-    resultados = []
-    for nombre, (lat, lon) in zonas.items():
-        datos = obtener_trafico(lat, lon, api_key)
-        datos.update({
-            "zona": nombre,
-            "lat": lat,
-            "lon": lon,
-            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
-        resultados.append(datos)
-    return pd.DataFrame(resultados)
+    try:
+        df = pd.read_csv('trafico_cali.csv')
+    except FileNotFoundError:
+        df = pd.DataFrame()
+    finally:
+        resultados = []
+        for nombre, (lat, lon) in zonas.items():
+            datos = obtener_trafico(lat, lon, api_key)
+            datos.update({
+                "zona": nombre,
+                "lat": lat,
+                "lon": lon,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            })
+            resultados.append(datos)
+        df = pd.concat([df, pd.DataFrame(resultados)])
+        df.to_csv('trafico_cali.csv')
+    return df
 
 #  Visualizar en mapa interactivo
 def generar_mapa(df, archivo_html="trafico_bogota.html"):
@@ -89,13 +96,26 @@ def generar_mapa(df, archivo_html="trafico_bogota.html"):
     print(f" Mapa actualizado: {archivo_html}")
 
 #  Bucle de monitoreo continuo
-if __name__ == "__main__":
+def data_generation():
     try:
-        while True:
-            print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
-            df_trafico = generar_dataset(ZONAS, API_KEY)
-            print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza"]])
-            generar_mapa(df_trafico)
-            time.sleep(5)  # Espera 5 segundos antes del siguiente ciclo
+        print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
+        df_trafico = generar_dataset(ZONAS, API_KEY)
+        print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza"]])
+        generar_mapa(df_trafico)
     except KeyboardInterrupt:
         print("\n Monitoreo detenido por el usuario.")
+# Schedule every minute
+schedule.every(1).minutes.do(lambda: data_generation())
+while True:
+    schedule.run_pending()
+    # time.sleep(1)
+# if __name__ == "__main__":
+#     try:
+#         while True:
+#             print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
+#             df_trafico = generar_dataset(ZONAS, API_KEY)
+#             print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza"]])
+#             generar_mapa(df_trafico)
+#             time.sleep(5)  # Espera 5 segundos antes del siguiente ciclo
+#     except KeyboardInterrupt:
+#         print("\n Monitoreo detenido por el usuario.")
