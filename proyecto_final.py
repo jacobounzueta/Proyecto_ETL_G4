@@ -23,31 +23,30 @@ ZONAS = {
     # "Fontibón": (4.678, -74.140),
     # "VALLE DE LILI": (3.374263, -76.524778),
     # "POPAYAN BARRIO": (2.437848, -76.602808)
-    "Start": (3.260246, -76.558757),
-    "Point 1": (3.266395, -76.557887),
-    "Point 2": (3.276911, -76.556449),
-    "Point 3": (3.280842, -76.555205),
-    "Point 4": (3.292055, -76.544980),
-    "Point 5": (3.306039, -76.540577),
-    "Point 6": (3.310819, -76.538956),
-    "Point 7": (3.325761, -76.533661),
-    "Point 8": (3.332542, -76.532629),
-    "Point 9": (3.336233, -76.531903),
-    "Point 10": (3.338965, -76.531319),
-    "End": (3.342193, -76.530978)
+    "Start": (3.260345, -76.558729),
+    "Point 1": (3.268444, -76.557621),
+    "Point 2": (3.276224, -76.556545),
+    "Point 3": (3.282640, -76.552424),
+    "Point 4": (3.287327, -76.546453),
+    "Point 5": (3.295010, -76.544032),
+    "Point 6": (3.305124, -76.540869),
+    "Point 7": (3.312282, -76.538440),
+    "Point 8": (3.319838, -76.535761),
+    "Point 9": (3.330306, -76.532753),
+    "End": (3.342223, -76.530967)
 }
 
 #  Función para consultar tráfico
-def obtener_trafico(lat, lon, api_key):
+def obtener_velocidad(lat, lon, api_key):
     url = (
-        f'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json'
+        f'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/6/json'
         f'?point={lat},{lon}&key={api_key}'
-    )
-
+    )    
     """"
     - currentSpeed: velocidad promedio actual en el segmento (km/h).
     - freeFlowSpeed: velocidad esperada en condiciones óptimas (sin tráfico).
     - congestion: proporción de pérdida de velocidad, entre 0 (flujo libre) y 1 (tráfico detenido).
+
     """
     try:
         response = requests.get(url)
@@ -64,30 +63,58 @@ def obtener_trafico(lat, lon, api_key):
     except Exception as e:
         return {"error": str(e)}
 
+# Funcion para consultar distancia y tiempo de ruta
+def obtener_ruta(api_key):
+    url2 = (f'https://api.tomtom.com/routemonitoring/3/routes/81564/details?key=wvYEt70EmwoIsqblGepQjlgwCb5BmNIL')
+    """"
+    - routeLength: longitud del segmento (metros).
+    - travelTime: tiempo estimado para recorrer el segmento (segundos).
+    - delayTime: tiempo adicional debido al tráfico (segundos).
+    """
+    try:
+        response = requests.get(url2)
+        if response.status_code == 200:
+            data_ruta = response.json()
+            return {
+                "distancia_ruta": data_ruta['routeLength'],
+                "duracion_ruta": data_ruta['travelTime'],
+                "demora_ruta": data_ruta['delayTime']
+            }
+        else:
+            return {"error": response.status_code}
+    except Exception as e:
+        return {"error": str(e)}
+
 #  Generar DataFrame
 def generar_dataset(zonas, api_key):
     try:
-        df = pd.read_csv('trafico_cali.csv')
+        df = pd.read_csv('trafico_cali.csv', index_col=0)
     except FileNotFoundError:
         df = pd.DataFrame()
     finally:
+        datos_ruta = obtener_ruta(api_key)
         resultados = []
         for nombre, (lat, lon) in zonas.items():
-            datos = obtener_trafico(lat, lon, api_key)
+            datos = obtener_velocidad(lat, lon, api_key)
             datos.update({
                 "zona": nombre,
                 "lat": lat,
                 "lon": lon,
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "distancia_ruta": datos_ruta.get("distancia_ruta"),
+                "duracion_ruta": datos_ruta.get("duracion_ruta"),
+                "demora_ruta": datos_ruta.get("demora_ruta")
             })
             resultados.append(datos)
         df = pd.concat([df, pd.DataFrame(resultados)])
+        cols_to_drop = [col for col in df.columns if col.startswith('Unnamed')]
+        df.drop(columns=cols_to_drop, inplace=True)
         df.to_csv('trafico_cali.csv')
     return df
 
 #  Visualizar en mapa interactivo
-def generar_mapa(df, archivo_html="trafico_bogota.html"):
-    mapa = folium.Map(location=[4.653, -74.083], zoom_start=12)
+def generar_mapa(df, archivo_html="trafico_canasgordas.html"):
+    mapa = folium.Map(location=[3.295010, -76.544032], zoom_start=12)
     for _, row in df.iterrows():
         color = 'red' if row['congestion'] > 0.5 else 'orange' if row['congestion'] > 0.2 else 'green'
         popup_text = (
@@ -112,7 +139,7 @@ def data_generation():
     try:
         print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
         df_trafico = generar_dataset(ZONAS, API_KEY)
-        print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza"]])
+        print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza","distancia_ruta","duracion_ruta","demora_ruta"]])
         generar_mapa(df_trafico)
     except KeyboardInterrupt:
         print("\n Monitoreo detenido por el usuario.")
