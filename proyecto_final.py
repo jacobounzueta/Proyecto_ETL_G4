@@ -45,23 +45,23 @@ ZONAS = {
     "End": (3.342223, -76.530967)
 }
 
-try:
-    connection = mysql.connector.connect(
-        user = DB_USER,
-        password = DB_PASSWORD,
-        host = DB_HOST,
-        port = DB_PORT,
-        database = DB_NAME
-    )
-    cursor = connection.cursor()
-    cursor.execute('CREATE TABLE IF NOT EXISTS trafico_cali (id INT AUTO_INCREMENT PRIMARY KEY, zona VARCHAR(50), lat FLOAT, lon FLOAT, timestamp DATETIME, velocidad_actual FLOAT, flujo_libre FLOAT, congestion FLOAT, confianza INT, distancia_ruta FLOAT, duracion_ruta FLOAT, demora_ruta FLOAT)')
-    print('Conexion exitosa')
-    cursor.close()
-    connection.close()
-except mysql.connector.Error as err:
-    print(f'Error: {err}')
 
+def insertar_trafico_mysql(resultados, tabla="trafico_cali", conexion=None):
 
+    results = tuple(resultados)
+    try:
+        cursor = conexion.cursor()
+        cursor.executemany(f"""
+            INSERT INTO {tabla} (zona, lat, lon, timestamp, velocidad_actual, flujo_libre, congestion, confianza, distancia_ruta, duracion_ruta, demora_ruta)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, results)
+        conexion.commit()
+        print('Insert hecho')
+        # print(f"✅ Insertados {cursor.rowcount} registros en {tabla}")
+        cursor.close()
+        conexion.close()
+    except mysql.connector.Error as err:
+        print(f"❌ Error al insertar datos: {err}")
 #  Función para consultar tráfico
 def obtener_velocidad(lat, lon, api_key):
     url = (
@@ -112,7 +112,7 @@ def obtener_ruta(api_key):
         return {"error": str(e)}
 
 #  Generar DataFrame
-def generar_dataset(zonas, api_key):
+def generar_dataset(zonas, api_key, conexion):
     try:
         df = pd.read_csv('trafico_cali.csv', index_col=0)
     except FileNotFoundError:
@@ -133,24 +133,8 @@ def generar_dataset(zonas, api_key):
             })
             resultados.append(datos)
             # Insert data into MySQL
-            try:
-                connection = mysql.connector.connect(
-                    user = DB_USER,
-                    password = DB_PASSWORD,
-                    host = DB_HOST,
-                    port = DB_PORT,
-                    database = DB_NAME
-                )
-                cursor = connection.cursor()
-                cursor.execute(
-                    'INSERT INTO trafico_cali (zona, lat, lon, timestamp, velocidad_actual, flujo_libre, congestion, confianza, distancia_ruta, duracion_ruta, demora_ruta) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-                    (nombre, lat, lon, datos['timestamp'], datos['velocidad_actual'], datos['flujo_libre'], datos['congestion'], datos['confianza'], datos_ruta.get("distancia_ruta"), datos_ruta.get("duracion_ruta"), datos_ruta.get("demora_ruta"))
-                )
-                connection.commit()
-                cursor.close()
-                connection.close()
-            except Exception as e:
-                pass
+            # try:
+            insertar_trafico_mysql(resultados, tabla="trafico_cali", conexion=conexion)
         df = pd.concat([df, pd.DataFrame(resultados)])
         cols_to_drop = [col for col in df.columns if col.startswith('Unnamed')]
         df.drop(columns=cols_to_drop, inplace=True)
@@ -181,15 +165,26 @@ def generar_mapa(df, archivo_html="trafico_canasgordas.html"):
 
 #  Bucle de monitoreo continuo
 def data_generation():
+    conexion = mysql.connector.connect(
+        user='u27hjw3jfjaengp4',
+        password='yIUyH5vqgcH507V4HuZY',
+        host='bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com',
+        database='bsoc7uhsw5gjn4zf9ves',
+        port='3306'
+    )
+    print("✅ Conexión exitosa:", conexion)
     try:
         print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
-        df_trafico = generar_dataset(ZONAS, API_KEY)
+        df_trafico = generar_dataset(ZONAS, API_KEY,conexion)
         print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza","distancia_ruta","duracion_ruta","demora_ruta"]])
         generar_mapa(df_trafico)
     except KeyboardInterrupt:
         print("\n Monitoreo detenido por el usuario.")
 # Schedule every minute
-schedule.every(5).minutes.do(lambda: data_generation())
+schedule.every(1).minutes.do(lambda: data_generation())
 while True:
-    schedule.run_pending()
     
+    schedule.run_pending()
+    # if KeyboardInterrupt:
+    #     conexion.close()
+    #     print("\n Monitoreo detenido por el usuario.")
