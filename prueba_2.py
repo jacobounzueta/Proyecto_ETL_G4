@@ -1,3 +1,4 @@
+# Import de librerías
 import requests
 import pandas as pd
 import folium
@@ -5,7 +6,7 @@ from datetime import datetime
 import schedule
 import mysql.connector
 
-# Configuración
+# Configuración de la base de datos y llaves API
 DB_CONFIG = {
     "host": "bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com",
     "database": "bsoc7uhsw5gjn4zf9ves",
@@ -19,6 +20,7 @@ API_KEYS = {
     "ruta": "wvYEt70EmwoIsqblGepQjlgwCb5BmNIL"
 }
 
+# Definición de zonas por coordenadas
 ZONAS = {
     "Start": (3.260345, -76.558729),
     "Point 1": (3.268444, -76.557621),
@@ -33,9 +35,21 @@ ZONAS = {
     "End": (3.342223, -76.530967)
 }
 
-# Funciones de API
+# Funciones de extracción de datos
+
 def obtener_velocidad(lat, lon, api_key):
+    '''
+    Obtiene la velocidad actual y otros datos de tráfico para una ubicación dada usando la API de TomTom.
+    Parámetros:
+    - lat (float): Latitud del punto en grados sexagesimales.
+    - lon (float): Longitud del punto en grados sexagesimales.
+    - api_key (str): Llave de la API de velocidad de TomTom.
+    Retorna:
+    - dict: Diccionario con datos de velocidad actual, flujo libre, congestión y confianza.
+    '''
+    
     url = f'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/6/json?point={lat},{lon}&key={api_key}'
+    
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -51,6 +65,13 @@ def obtener_velocidad(lat, lon, api_key):
         return {}
 
 def obtener_ruta(api_key):
+    '''
+    Obtiene detalles de la ruta usando la API de TomTom.
+    Parámetros:
+    - api_key (str): Llave de la API de rutas de TomTom.
+    Retorna:
+    - dict: Diccionario con datos de distancia de la ruta, duración y demora.
+    '''
     url = f'https://api.tomtom.com/routemonitoring/3/routes/81564/details?key={api_key}'
     try:
         response = requests.get(url)
@@ -67,6 +88,12 @@ def obtener_ruta(api_key):
 
 # Inserción en MySQL
 def insertar_trafico_mysql(resultados, tabla="trafico_cali"):
+    '''
+    Inserta los resultados de tráfico en la base de datos MySQL.
+    Parámetros:
+    - resultados (list): Lista de tuplas con los datos a insertar.
+    - tabla (str): Nombre de la tabla en la base de datos.
+    '''
     try:
         with mysql.connector.connect(**DB_CONFIG) as conexion:
             with conexion.cursor() as cursor:
@@ -81,16 +108,27 @@ def insertar_trafico_mysql(resultados, tabla="trafico_cali"):
 
 # Dataset
 def generar_dataset(zonas, api_keys):
+    '''
+    Genera un dataset con los datos de tráfico para las zonas especificadas.
+    Parámetros:
+    - zonas (dict): Diccionario con nombres de zonas y sus coordenadas (lat,
+      lon).
+      - api_keys (dict): Diccionario con las llaves de las APIs.
+      Retorna:
+      - pd.DataFrame: DataFrame con los datos de tráfico recopilados.
+    '''
+    # Intentar cargar datos previos, si no existe, crear un dataframe vacío.
     try:
         df = pd.read_csv('trafico_cali.csv', index_col=0)
     except FileNotFoundError:
         df = pd.DataFrame()
-
+    # Obtener datos de ruta una vez
     datos_ruta = obtener_ruta(api_keys["ruta"])
     resultados = []
 
     for nombre, (lat, lon) in zonas.items():
         datos = obtener_velocidad(lat, lon, api_keys["trafico"])
+        # Transformar y agregar datos
         if datos:
             datos.update({
                 "zona": nombre,
@@ -113,18 +151,19 @@ def generar_dataset(zonas, api_keys):
                 datos["demora_ruta"]
             ))
 
-
     if resultados:
+        # Carga de datos en MySQL
         insertar_trafico_mysql(resultados)
         df = pd.concat([df, pd.DataFrame([dict(zip([
             "zona", "lat", "lon", "timestamp", "velocidad_actual", "flujo_libre", "congestion", "confianza",
             "distancia_ruta", "duracion_ruta", "demora_ruta"
         ], r)) for r in resultados])])
+        # Manejar columnas no deseadas y guardar dataframe en CSV
         df.drop(columns=[col for col in df.columns if col.startswith('Unnamed')], inplace=True)
         df.to_csv('trafico_cali.csv')
     return df
 
-# Mapa
+# Generación de mapa
 def generar_mapa(df, archivo_html="trafico_canasgordas.html"):
     mapa = folium.Map(location=[3.295010, -76.544032], zoom_start=12)
     for _, row in df.iterrows():
@@ -152,7 +191,7 @@ def data_generation():
         print(df[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza", "distancia_ruta", "duracion_ruta", "demora_ruta"]])
         generar_mapa(df)
 
-# Scheduler
+# Planner
 schedule.every(1).minutes.do(data_generation)
 
 if __name__ == "__main__":
