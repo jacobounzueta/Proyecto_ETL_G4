@@ -75,9 +75,9 @@ def insertar_trafico_mysql(resultados, tabla="trafico_cali"):
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, resultados)
                 conexion.commit()
-                print(f"✅ Insertados {cursor.rowcount} registros en {tabla}")
+                print(f"Insertados {cursor.rowcount} registros en {tabla}")
     except mysql.connector.Error as err:
-        print(f"❌ Error al insertar datos: {err}")
+        print(f"Error al insertar datos: {err}")
 
 # Dataset
 def generar_dataset(zonas, api_keys):
@@ -142,11 +142,11 @@ def generar_mapa(df, archivo_html="trafico_canasgordas.html"):
             fill_opacity=0.7
         ).add_to(mapa)
     mapa.save(archivo_html)
-    print(f"🗺️ Mapa actualizado: {archivo_html}")
+    print(f"Mapa actualizado: {archivo_html}")
 
 # Monitoreo
 def data_generation():
-    print(f"\n📡 Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
     df = generar_dataset(ZONAS, API_KEYS)
     if not df.empty:
         print(df[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza", "distancia_ruta", "duracion_ruta", "demora_ruta"]])
@@ -156,6 +156,6 @@ def data_generation():
 schedule.every(1).minutes.do(data_generation)
 
 if __name__ == "__main__":
-    print("🚀 Iniciando monitoreo de tráfico...")
+    print(" Iniciando monitoreo de tráfico...")
     while True:
         schedule.run_pending()
