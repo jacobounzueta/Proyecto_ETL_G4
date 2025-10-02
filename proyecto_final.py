@@ -1,37 +1,27 @@
-#https://developer.tomtom.com/user/me/apps
-
-#esto es una prueba
-
+# Import de librerías
 import requests
 import pandas as pd
 import folium
 from datetime import datetime
-import time
 import schedule
 import mysql.connector
 
-DB_HOST = 'bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com'
-DB_NAME = 'bsoc7uhsw5gjn4zf9ves'
-DB_USER = 'u27hjw3jfjaengp4'
-DB_PASSWORD = 'yIUyH5vqgcH507V4HuZY'
-DB_PORT = 3306
-Connection_URI = 'mysql://u27hjw3jfjaengp4:yIUyH5vqgcH507V4HuZY@bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com:3306/bsoc7uhsw5gjn4zf9ves'
-MySQL_CLI = 'mysql -h bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com -P 3306 -u u27hjw3jfjaengp4 -p bsoc7uhsw5gjn4zf9ves'
+# Configuración de la base de datos y llaves API
+DB_CONFIG = {
+    "host": "bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com",
+    "database": "bsoc7uhsw5gjn4zf9ves",
+    "user": "u27hjw3jfjaengp4",
+    "password": "yIUyH5vqgcH507V4HuZY",
+    "port": 3306
+}
 
-# API TomTom
-API_KEY = 'G1Kx7s7TNR8FRXYcF9UHD06gFOXVuzCb'
-API_KEY_2 = 'Q9n4jfzUJ8S32eAwzEEtkvBNGevA0Z28'
-# Puntos estratégicos de cali
+API_KEYS = {
+    "trafico": "Q9n4jfzUJ8S32eAwzEEtkvBNGevA0Z28",
+    "ruta": "wvYEt70EmwoIsqblGepQjlgwCb5BmNIL"
+}
+
+# Definición de zonas por coordenadas
 ZONAS = {
-    #"Centro": (4.653, -74.083),
-    # "Zona T": (4.667, -74.057),
-    # "Usaquén": (4.702, -74.030),
-    # "Kennedy": (4.631, -74.157),
-    # "Suba": (4.748, -74.093),
-    # "Chapinero": (4.645, -74.065),
-    # "Fontibón": (4.678, -74.140),
-    # "VALLE DE LILI": (3.374263, -76.524778),
-    # "POPAYAN BARRIO": (2.437848, -76.602808)
     "Start": (3.260345, -76.558729),
     "Point 1": (3.268444, -76.557621),
     "Point 2": (3.276224, -76.556545),
@@ -45,146 +35,166 @@ ZONAS = {
     "End": (3.342223, -76.530967)
 }
 
+# Funciones de extracción de datos
 
-def insertar_trafico_mysql(resultados, tabla="trafico_cali", conexion=None):
-
-    results = tuple(resultados)
-    try:
-        cursor = conexion.cursor()
-        cursor.executemany(f"""
-            INSERT INTO {tabla} (zona, lat, lon, timestamp, velocidad_actual, flujo_libre, congestion, confianza, distancia_ruta, duracion_ruta, demora_ruta)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, results)
-        conexion.commit()
-        print('Insert hecho')
-        # print(f"✅ Insertados {cursor.rowcount} registros en {tabla}")
-        cursor.close()
-        conexion.close()
-    except mysql.connector.Error as err:
-        print(f"❌ Error al insertar datos: {err}")
-#  Función para consultar tráfico
 def obtener_velocidad(lat, lon, api_key):
-    url = (
-        f'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/6/json'
-        f'?point={lat},{lon}&key={api_key}'
-    )    
-    """"
-    - currentSpeed: velocidad promedio actual en el segmento (km/h).
-    - freeFlowSpeed: velocidad esperada en condiciones óptimas (sin tráfico).
-    - congestion: proporción de pérdida de velocidad, entre 0 (flujo libre) y 1 (tráfico detenido).
-
-    """
+    '''
+    Obtiene la velocidad actual y otros datos de tráfico para una ubicación dada usando la API de TomTom.
+    Parámetros:
+    - lat (float): Latitud del punto en grados sexagesimales.
+    - lon (float): Longitud del punto en grados sexagesimales.
+    - api_key (str): Llave de la API de velocidad de TomTom.
+    Retorna:
+    - dict: Diccionario con datos de velocidad actual, flujo libre, congestión y confianza.
+    '''
+    
+    url = f'https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/6/json?point={lat},{lon}&key={api_key}'
+    
     try:
         response = requests.get(url)
-        if response.status_code == 200:
-            data = response.json()['flowSegmentData']
-            return {
-                "velocidad_actual": data['currentSpeed'],
-                "flujo_libre": data['freeFlowSpeed'],
-                "congestion": round(1 - data['currentSpeed'] / data['freeFlowSpeed'], 2),
-                "confianza": data['confidence']
-            }
-        else:
-            return {"error": response.status_code}
+        response.raise_for_status()
+        data = response.json()['flowSegmentData']
+        return {
+            "velocidad_actual": data['currentSpeed'],
+            "flujo_libre": data['freeFlowSpeed'],
+            "congestion": round(1 - data['currentSpeed'] / data['freeFlowSpeed'], 2),
+            "confianza": data['confidence']
+        }
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error al obtener velocidad: {e}")
+        return {}
 
-# Funcion para consultar distancia y tiempo de ruta
 def obtener_ruta(api_key):
-    url2 = (f'https://api.tomtom.com/routemonitoring/3/routes/81564/details?key=wvYEt70EmwoIsqblGepQjlgwCb5BmNIL')
-    """"
-    - routeLength: longitud del segmento (metros).
-    - travelTime: tiempo estimado para recorrer el segmento (segundos).
-    - delayTime: tiempo adicional debido al tráfico (segundos).
-    """
+    '''
+    Obtiene detalles de la ruta usando la API de TomTom.
+    Parámetros:
+    - api_key (str): Llave de la API de rutas de TomTom.
+    Retorna:
+    - dict: Diccionario con datos de distancia de la ruta, duración y demora.
+    '''
+    url = f'https://api.tomtom.com/routemonitoring/3/routes/81564/details?key={api_key}'
     try:
-        response = requests.get(url2)
-        if response.status_code == 200:
-            data_ruta = response.json()
-            return {
-                "distancia_ruta": data_ruta['routeLength'],
-                "duracion_ruta": data_ruta['travelTime'],
-                "demora_ruta": data_ruta['delayTime']
-            }
-        else:
-            return {"error": response.status_code}
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        return {
+            "distancia_ruta": data['routeLength'],
+            "duracion_ruta": data['travelTime'],
+            "demora_ruta": data['delayTime']
+        }
     except Exception as e:
-        return {"error": str(e)}
+        print(f"Error al obtener ruta: {e}")
+        return {}
 
-#  Generar DataFrame
-def generar_dataset(zonas, api_key, conexion):
+# Inserción en MySQL
+def insertar_trafico_mysql(resultados, tabla="trafico_cali"):
+    '''
+    Inserta los resultados de tráfico en la base de datos MySQL.
+    Parámetros:
+    - resultados (list): Lista de tuplas con los datos a insertar.
+    - tabla (str): Nombre de la tabla en la base de datos.
+    '''
+    try:
+        with mysql.connector.connect(**DB_CONFIG) as conexion:
+            with conexion.cursor() as cursor:
+                cursor.executemany(f"""
+                    INSERT INTO {tabla} (zona, lat, lon, timestamp, velocidad_actual, flujo_libre, congestion, confianza, distancia_ruta, duracion_ruta, demora_ruta)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, resultados)
+                conexion.commit()
+                print(f"Insertados {cursor.rowcount} registros en {tabla}")
+    except mysql.connector.Error as err:
+        print(f"Error al insertar datos: {err}")
+
+# Dataset
+def generar_dataset(zonas, api_keys):
+    '''
+    Genera un dataset con los datos de tráfico para las zonas especificadas.
+    Parámetros:
+    - zonas (dict): Diccionario con nombres de zonas y sus coordenadas (lat,
+      lon).
+      - api_keys (dict): Diccionario con las llaves de las APIs.
+      Retorna:
+      - pd.DataFrame: DataFrame con los datos de tráfico recopilados.
+    '''
+    # Intentar cargar datos previos, si no existe, crear un dataframe vacío.
     try:
         df = pd.read_csv('trafico_cali.csv', index_col=0)
     except FileNotFoundError:
         df = pd.DataFrame()
-    finally:
-        datos_ruta = obtener_ruta(api_key)
-        resultados = []
-        for nombre, (lat, lon) in zonas.items():
-            datos = obtener_velocidad(lat, lon, API_KEY_2)
+    # Obtener datos de ruta una vez
+    datos_ruta = obtener_ruta(api_keys["ruta"])
+    resultados = []
+
+    for nombre, (lat, lon) in zonas.items():
+        datos = obtener_velocidad(lat, lon, api_keys["trafico"])
+        # Transformar y agregar datos
+        if datos:
             datos.update({
                 "zona": nombre,
                 "lat": lat,
                 "lon": lon,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "distancia_ruta": datos_ruta.get("distancia_ruta"),
-                "duracion_ruta": datos_ruta.get("duracion_ruta"),
-                "demora_ruta": datos_ruta.get("demora_ruta")
+                **datos_ruta
             })
-            resultados.append(datos)
-            # Insert data into MySQL
-            # try:
-            insertar_trafico_mysql(resultados, tabla="trafico_cali", conexion=conexion)
-        df = pd.concat([df, pd.DataFrame(resultados)])
-        cols_to_drop = [col for col in df.columns if col.startswith('Unnamed')]
-        df.drop(columns=cols_to_drop, inplace=True)
+            resultados.append((
+                datos["zona"],
+                datos["lat"],
+                datos["lon"],
+                datos["timestamp"],
+                datos["velocidad_actual"],
+                datos["flujo_libre"],
+                datos["congestion"],
+                datos["confianza"],
+                datos["distancia_ruta"],
+                datos["duracion_ruta"],
+                datos["demora_ruta"]
+            ))
+
+    if resultados:
+        # Carga de datos en MySQL
+        insertar_trafico_mysql(resultados)
+        df = pd.concat([df, pd.DataFrame([dict(zip([
+            "zona", "lat", "lon", "timestamp", "velocidad_actual", "flujo_libre", "congestion", "confianza",
+            "distancia_ruta", "duracion_ruta", "demora_ruta"
+        ], r)) for r in resultados])])
+        # Manejar columnas no deseadas y guardar dataframe en CSV
+        df.drop(columns=[col for col in df.columns if col.startswith('Unnamed')], inplace=True)
         df.to_csv('trafico_cali.csv')
     return df
 
-#  Visualizar en mapa interactivo
+# Generación de mapa
 def generar_mapa(df, archivo_html="trafico_canasgordas.html"):
     mapa = folium.Map(location=[3.295010, -76.544032], zoom_start=12)
     for _, row in df.iterrows():
         color = 'red' if row['congestion'] > 0.5 else 'orange' if row['congestion'] > 0.2 else 'green'
-        popup_text = (
-            f"{row['zona']}<br>"
-            f"Velocidad actual: {row['velocidad_actual']} km/h<br>"
-            f"Congestión: {row['congestion']*100:.0f}%<br>"
-            f"Confianza: {row['confianza']}"
+        popup = folium.Popup(
+            f"{row['zona']}<br>Velocidad: {row['velocidad_actual']} km/h<br>Congestión: {row['congestion']*100:.0f}%<br>Confianza: {row['confianza']}",
+            max_width=300
         )
         folium.CircleMarker(
             location=[row['lat'], row['lon']],
             radius=8,
-            popup=popup_text,
+            popup=popup,
             color=color,
             fill=True,
             fill_opacity=0.7
         ).add_to(mapa)
     mapa.save(archivo_html)
-    print(f" Mapa actualizado: {archivo_html}")
+    print(f"Mapa actualizado: {archivo_html}")
 
-#  Bucle de monitoreo continuo
+# Monitoreo
 def data_generation():
-    conexion = mysql.connector.connect(
-        user='u27hjw3jfjaengp4',
-        password='yIUyH5vqgcH507V4HuZY',
-        host='bsoc7uhsw5gjn4zf9ves-mysql.services.clever-cloud.com',
-        database='bsoc7uhsw5gjn4zf9ves',
-        port='3306'
-    )
-    print("✅ Conexión exitosa:", conexion)
-    try:
-        print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
-        df_trafico = generar_dataset(ZONAS, API_KEY,conexion)
-        print(df_trafico[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza","distancia_ruta","duracion_ruta","demora_ruta"]])
-        generar_mapa(df_trafico)
-    except KeyboardInterrupt:
-        print("\n Monitoreo detenido por el usuario.")
-# Schedule every minute
-schedule.every(1).minutes.do(lambda: data_generation())
-while True:
-    
-    schedule.run_pending()
-    # if KeyboardInterrupt:
-    #     conexion.close()
-    #     print("\n Monitoreo detenido por el usuario.")
+    print(f"\n Sensando tráfico: {datetime.now().strftime('%H:%M:%S')}")
+    df = generar_dataset(ZONAS, API_KEYS)
+    if not df.empty:
+        print(df[["zona", "velocidad_actual", "flujo_libre", "congestion", "confianza", "distancia_ruta", "duracion_ruta", "demora_ruta"]])
+        generar_mapa(df)
+
+# Planner
+schedule.every(1).minutes.do(data_generation)
+
+if __name__ == "__main__":
+    print(" Iniciando monitoreo de tráfico...")
+    while True:
+        schedule.run_pending()
